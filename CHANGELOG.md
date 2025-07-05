@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [0.5.7] - 2025-01-09
 
 ### Fixed
+- **Model ID Validation**: Fixed issue where valid IFC models returning modelId 0 were incorrectly rejected
+  - Changed validation logic to check model data availability instead of rejecting modelId 0 outright
+  - ModelId -1 (documented failure value) is still immediately rejected
+  - Only reject models where no data can be extracted via GetAllLines()
+  - Based on web-ifc documentation indicating -1 as failure, not 0
 - **Binary Data Handling**: Enhanced binary data extraction to handle both base64 encoded and raw text data
   - Added detection for different data formats (base64 vs text)
   - Fixed issue where HTTP Request nodes downloading IFC files as text/plain were causing parsing failures
@@ -12,7 +17,8 @@ All notable changes to this project will be documented in this file.
   - Properly handle both binary and text data sources from different n8n node outputs
 
 ### Enhanced
-- **Debug Information**: Added more detailed logging for binary data processing and format detection
+- **Debug Information**: Added comprehensive logging for model validation and data processing
+- **Error Messages**: Improved error messages to better indicate the actual cause of model loading failures
 
 ## [0.5.6] - 2025-01-09
 
