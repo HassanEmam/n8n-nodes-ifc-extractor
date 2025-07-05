@@ -160,12 +160,26 @@ export class IfcToGlb implements INodeType {
 
 				// Get IFC data
 				let ifcData: ArrayBuffer;
+				console.log('=== Extracting IFC Data ===');
+				console.log('Data source:', dataSource);
+				console.log('Available binary properties:', Object.keys(items[i].binary || {}));
+				console.log('Binary data structure:', items[i].binary);
+				
 				if (dataSource === 'binaryProperty') {
 					const propertyName = this.getNodeParameter('binaryPropertyName', i) as string;
+					console.log('Looking for binary property:', propertyName);
+					
 					const binaryData = items[i].binary?.[propertyName];
 					if (!binaryData) {
-						throw new NodeOperationError(this.getNode(), `Binary property '${propertyName}' not found`);
+						console.error('Available properties:', Object.keys(items[i].binary || {}));
+						throw new NodeOperationError(this.getNode(), `Binary property '${propertyName}' not found. Available properties: ${Object.keys(items[i].binary || {}).join(', ')}`);
 					}
+					console.log('Found binary data:', {
+						mimeType: binaryData.mimeType,
+						fileName: binaryData.fileName,
+						dataLength: binaryData.data?.length || 0
+					});
+					
 					// Convert base64 string to ArrayBuffer
 					const binaryString = atob(binaryData.data);
 					const bytes = new Uint8Array(binaryString.length);
@@ -174,11 +188,48 @@ export class IfcToGlb implements INodeType {
 					}
 					ifcData = bytes.buffer;
 				} else {
-					// Assume input data contains IFC as ArrayBuffer
-					const binaryData = items[i].binary?.data;
-					if (!binaryData) {
-						throw new NodeOperationError(this.getNode(), 'No IFC data found in input');
+					// inputData mode - look for binary data in the main data property
+					console.log('Looking for binary data in main data property');
+					
+					// Try different possible locations for the binary data
+					let binaryData = items[i].binary?.data;
+					
+					// If not found in 'data', try other common property names
+					if (!binaryData && items[i].binary) {
+						const binary = items[i].binary;
+						if (binary && typeof binary === 'object') {
+							const binaryKeys = Object.keys(binary);
+							console.log('Available binary keys:', binaryKeys);
+							
+							// Try common property names for file data
+							for (const key of ['file', 'attachment', 'document', 'content']) {
+								if (binary[key]) {
+									console.log(`Found binary data in property: ${key}`);
+									binaryData = binary[key];
+									break;
+								}
+							}
+							
+							// If still not found, use the first available binary property
+							if (!binaryData && binaryKeys.length > 0) {
+								const firstKey = binaryKeys[0];
+								console.log(`Using first available binary property: ${firstKey}`);
+								binaryData = binary[firstKey];
+							}
+						}
 					}
+					
+					if (!binaryData) {
+						console.error('No binary data found. Item structure:', JSON.stringify(items[i], null, 2));
+						throw new NodeOperationError(this.getNode(), 'No IFC data found in input. Make sure the HTTP Request node output format is set to "file".');
+					}
+					
+					console.log('Found binary data:', {
+						mimeType: binaryData.mimeType,
+						fileName: binaryData.fileName,
+						dataLength: binaryData.data?.length || 0
+					});
+					
 					// Convert base64 string to ArrayBuffer
 					const binaryString = atob(binaryData.data);
 					const bytes = new Uint8Array(binaryString.length);
@@ -187,6 +238,9 @@ export class IfcToGlb implements INodeType {
 					}
 					ifcData = bytes.buffer;
 				}
+				
+				console.log('=== IFC Data Extracted Successfully ===');
+				console.log('Final ArrayBuffer size:', ifcData.byteLength, 'bytes');
 
 				// Set default options
 				const options: IIfcToGlbOptions = {

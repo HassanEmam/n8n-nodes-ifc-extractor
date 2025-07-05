@@ -204,13 +204,33 @@ export class IfcMeshExtractor {
 			const uint8Array = new Uint8Array(ifcData);
 			console.log(`Loading IFC file with ${uint8Array.length} bytes...`);
 			
+			// Log first few bytes to help with debugging
+			const firstBytes = Array.from(uint8Array.slice(0, 20)).map(b => String.fromCharCode(b)).join('');
+			console.log(`First 20 characters of file: "${firstBytes}"`);
+			
+			// Check if it looks like an IFC file
+			const ifcHeader = new TextDecoder().decode(uint8Array.slice(0, 100));
+			console.log(`File header: ${ifcHeader.substring(0, 100)}`);
+			
+			if (!ifcHeader.includes('ISO-10303') && !ifcHeader.includes('IFC')) {
+				console.warn('File does not appear to be a valid IFC file based on header');
+			}
+			
 			try {
+				console.log('Attempting to open IFC model...');
 				this.modelId = this.api.OpenModel(uint8Array);
-				console.log(`IFC model loaded with ID: ${this.modelId}`);
+				console.log(`OpenModel returned ID: ${this.modelId}`);
 				
 				// Validate that the model was actually loaded
-				if (this.modelId === null || this.modelId === undefined || this.modelId < 0) {
-					throw new Error(`Invalid model ID returned: ${this.modelId}`);
+				if (this.modelId === null || this.modelId === undefined || this.modelId <= 0) {
+					const debugInfo = {
+						modelId: this.modelId,
+						fileSize: uint8Array.length,
+						firstBytes: firstBytes,
+						header: ifcHeader.substring(0, 50)
+					};
+					console.error('Invalid model ID - Debug info:', debugInfo);
+					throw new Error(`Invalid model ID returned: ${this.modelId}. This usually means the IFC file is corrupted or invalid.`);
 				}
 				
 				// Try to get basic model info to verify it's working
