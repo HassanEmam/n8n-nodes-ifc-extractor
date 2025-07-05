@@ -203,9 +203,40 @@ export class IfcExtractor implements INodeType {
 					ifcData = new Uint8Array(fileBuffer);
 				}
 
-				// Initialize web-ifc
+				// Initialize web-ifc with robust fallback strategy
 				const ifcApi = new WebIFC.IfcAPI();
-				await ifcApi.Init();
+				let initSuccess = false;
+				const errors: string[] = [];
+
+				// Try default initialization first
+				try {
+					await ifcApi.Init();
+					initSuccess = true;
+					console.log('web-ifc API initialized successfully with default approach');
+				} catch (error) {
+					const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+					errors.push(`Default init failed: ${errorMsg}`);
+					console.warn('Default web-ifc initialization failed:', errorMsg);
+				}
+
+				// If default fails, try module resolution
+				if (!initSuccess) {
+					try {
+						const webIfcPackageJson = require.resolve('web-ifc/package.json');
+						const webIfcDir = require('path').dirname(webIfcPackageJson);
+						ifcApi.SetWasmPath(webIfcDir + '/');
+						await ifcApi.Init();
+						initSuccess = true;
+						console.log('web-ifc API initialized with module resolution path');
+					} catch (error) {
+						const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+						errors.push(`Module resolution init failed: ${errorMsg}`);
+					}
+				}
+
+				if (!initSuccess) {
+					throw new NodeOperationError(this.getNode(), `Failed to initialize web-ifc API: ${errors.join('; ')}`);
+				}
 
 				const modelID = ifcApi.OpenModel(ifcData);
 

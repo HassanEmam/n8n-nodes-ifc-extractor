@@ -1,4 +1,6 @@
 import * as WebIFC from 'web-ifc';
+import * as path from 'path';
+import * as fs from 'fs';
 import { IMeshData, IGeometryData, IMaterialData } from '../types/interfaces';
 
 export class IfcMeshExtractor {
@@ -7,13 +9,206 @@ export class IfcMeshExtractor {
 
 	constructor() {
 		this.api = new WebIFC.IfcAPI();
-		this.api.SetWasmPath('node_modules/web-ifc/');
+		// Don't set WASM path in constructor - let it be handled during initialization
+	}
+
+	private findWebIfcWasmPath(): string {
+		// Try different possible locations for the web-ifc WASM files
+		const possiblePaths = [
+			// Direct module resolution first
+			this.tryResolveWebIfcPath(),
+			// n8n specific paths - most likely locations
+			'/usr/lib/node_modules/n8n/node_modules/web-ifc/',
+			'/home/node/.n8n/nodes/node_modules/n8n-nodes-ifc-extractor/node_modules/web-ifc/',
+			'/home/node/.n8n/nodes/node_modules/web-ifc/',
+			'/opt/n8n/node_modules/web-ifc/',
+			// Docker and containerized paths
+			'/usr/local/lib/node_modules/web-ifc/',
+			'/app/node_modules/web-ifc/',
+			// Relative paths from current location
+			path.resolve(__dirname, '../../../node_modules/web-ifc/'),
+			path.resolve(__dirname, '../../../../node_modules/web-ifc/'),
+			path.resolve(__dirname, '../../../../../node_modules/web-ifc/'),
+			path.resolve(__dirname, '../../../../../../node_modules/web-ifc/'),
+			// Current working directory paths
+			path.resolve(process.cwd(), 'node_modules/web-ifc/'),
+			path.resolve(process.cwd(), '../node_modules/web-ifc/'),
+			// Global node_modules
+			'/usr/lib/node_modules/web-ifc/',
+			'/usr/local/lib/node_modules/web-ifc/',
+			// Fallback paths
+			'node_modules/web-ifc/',
+			'./node_modules/web-ifc/',
+		];
+
+		// Log environment info for debugging
+		console.log('WASM Path Detection - Environment Info:');
+		console.log(`  __dirname: ${__dirname}`);
+		console.log(`  process.cwd(): ${process.cwd()}`);
+		console.log(`  __filename: ${__filename}`);
+
+		// Return the first path that contains the WASM file
+		for (const testPath of possiblePaths) {
+			if (testPath && this.checkWasmExists(testPath)) {
+				console.log(`Found web-ifc WASM files at: ${testPath}`);
+				return testPath;
+			}
+		}
+
+		// If none found, log available paths for debugging
+		console.warn('Could not find web-ifc WASM files in any of these paths:');
+		possiblePaths.filter(p => p).forEach(p => {
+			if (p) {
+				try {
+					console.warn(`  - ${p} (exists: ${fs.existsSync(p)})`);
+				} catch (e) {
+					console.warn(`  - ${p} (error checking: ${e})`);
+				}
+			}
+		});
+		
+		// Try to list what's actually in some key directories
+		this.debugDirectoryContents();
+		
+		// Use a relative fallback
+		return './node_modules/web-ifc/';
+	}
+
+	private tryResolveWebIfcPath(): string | null {
+		try {
+			const webIfcPackageJson = require.resolve('web-ifc/package.json');
+			const webIfcDir = path.dirname(webIfcPackageJson);
+			return webIfcDir + '/';
+		} catch (error) {
+			return null;
+		}
+	}
+
+	private checkWasmExists(testPath: string): boolean {
+		try {
+			const wasmFile = path.join(testPath, 'web-ifc.wasm');
+			const nodeWasmFile = path.join(testPath, 'web-ifc-node.wasm');
+			return fs.existsSync(wasmFile) || fs.existsSync(nodeWasmFile);
+		} catch (error) {
+			return false;
+		}
+	}
+
+	private debugDirectoryContents(): void {
+		const dirsToCheck = [
+			'/usr/lib/node_modules/',
+			'/usr/local/lib/node_modules/',
+			'/home/node/.n8n/nodes/node_modules/',
+			process.cwd(),
+			path.dirname(__filename),
+		];
+
+		console.log('Directory contents for debugging:');
+		dirsToCheck.forEach(dir => {
+			try {
+				if (fs.existsSync(dir)) {
+					const contents = fs.readdirSync(dir).slice(0, 10); // First 10 items
+					console.log(`  ${dir}: ${contents.join(', ')}`);
+				} else {
+					console.log(`  ${dir}: (does not exist)`);
+				}
+			} catch (e) {
+				console.log(`  ${dir}: (error reading: ${e})`);
+			}
+		});
 	}
 
 	async loadIfcFile(ifcData: ArrayBuffer): Promise<void> {
-		await this.api.Init();
-		const uint8Array = new Uint8Array(ifcData);
-		this.modelId = this.api.OpenModel(uint8Array);
+		try {
+			console.log('Initializing web-ifc API...');
+			
+			// Try multiple initialization approaches
+			let initSuccess = false;
+			const errors: string[] = [];
+
+			// Approach 1: Default initialization (no custom WASM path)
+			try {
+				console.log('Trying default initialization...');
+				this.api = new WebIFC.IfcAPI();
+				await this.api.Init();
+				initSuccess = true;
+				console.log('web-ifc API initialized successfully with default approach');
+			} catch (error) {
+				const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+				errors.push(`Default init failed: ${errorMsg}`);
+				console.warn('Default initialization failed:', errorMsg);
+			}
+
+			// Approach 2: Try with module resolution WASM path
+			if (!initSuccess) {
+				try {
+					console.log('Trying module resolution WASM path...');
+					this.api = new WebIFC.IfcAPI();
+					const webIfcPath = this.tryResolveWebIfcPath();
+					if (webIfcPath) {
+						console.log(`Setting WASM path to: ${webIfcPath}`);
+						this.api.SetWasmPath(webIfcPath);
+						await this.api.Init();
+						initSuccess = true;
+						console.log(`web-ifc API initialized with module resolution path: ${webIfcPath}`);
+					} else {
+						errors.push('Module resolution failed: could not resolve web-ifc path');
+					}
+				} catch (error) {
+					const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+					errors.push(`Module resolution init failed: ${errorMsg}`);
+					console.warn('Module resolution initialization failed:', errorMsg);
+				}
+			}
+
+			// Approach 3: Try with searched WASM path
+			if (!initSuccess) {
+				try {
+					console.log('Trying searched WASM path...');
+					this.api = new WebIFC.IfcAPI();
+					const wasmPath = this.findWebIfcWasmPath();
+					console.log(`Setting searched WASM path to: ${wasmPath}`);
+					this.api.SetWasmPath(wasmPath);
+					await this.api.Init();
+					initSuccess = true;
+					console.log(`web-ifc API initialized with searched path: ${wasmPath}`);
+				} catch (error) {
+					const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+					errors.push(`Searched path init failed: ${errorMsg}`);
+					console.warn('Searched path initialization failed:', errorMsg);
+				}
+			}
+
+			// Approach 4: Try with CDN fallback (for web environments)
+			if (!initSuccess) {
+				try {
+					console.log('Trying CDN fallback...');
+					this.api = new WebIFC.IfcAPI();
+					this.api.SetWasmPath('https://unpkg.com/web-ifc@0.0.57/');
+					await this.api.Init();
+					initSuccess = true;
+					console.log('web-ifc API initialized with CDN fallback');
+				} catch (error) {
+					const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+					errors.push(`CDN fallback init failed: ${errorMsg}`);
+					console.warn('CDN fallback initialization failed:', errorMsg);
+				}
+			}
+
+			if (!initSuccess) {
+				const fullError = `Failed to initialize web-ifc API after trying all approaches. Errors: ${errors.join('; ')}`;
+				console.error(fullError);
+				throw new Error(fullError);
+			}
+			
+			const uint8Array = new Uint8Array(ifcData);
+			console.log(`Loading IFC file with ${uint8Array.length} bytes...`);
+			this.modelId = this.api.OpenModel(uint8Array);
+			console.log(`IFC model loaded with ID: ${this.modelId}`);
+		} catch (error) {
+			console.error('Failed to load IFC file:', error);
+			throw new Error(`Failed to initialize web-ifc or load IFC file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+		}
 	}
 
 	async extractMeshes(): Promise<IMeshData[]> {
