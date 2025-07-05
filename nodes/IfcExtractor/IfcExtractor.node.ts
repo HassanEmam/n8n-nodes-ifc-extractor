@@ -10,6 +10,68 @@ import {
 import * as WebIFC from 'web-ifc';
 import { readFileSync } from 'fs';
 
+// Helper function to convert web-ifc objects to plain objects for JSON serialization
+function convertToPlainObject(obj: any): any {
+	if (obj === null || obj === undefined) {
+		return obj;
+	}
+
+	// Handle primitive types
+	if (typeof obj !== 'object') {
+		return obj;
+	}
+
+	// Handle arrays
+	if (Array.isArray(obj)) {
+		return obj.map(item => convertToPlainObject(item));
+	}
+
+	// Handle web-ifc Vector objects
+	if (obj.size && typeof obj.size === 'function' && obj.get && typeof obj.get === 'function') {
+		const array = [];
+		for (let i = 0; i < obj.size(); i++) {
+			array.push(convertToPlainObject(obj.get(i)));
+		}
+		return array;
+	}
+
+	// Handle regular objects
+	const result: any = {};
+	
+	try {
+		// Get all enumerable properties
+		for (const key in obj) {
+			if (obj.hasOwnProperty(key)) {
+				const value = obj[key];
+				// Skip functions and undefined values
+				if (typeof value !== 'function' && value !== undefined) {
+					result[key] = convertToPlainObject(value);
+				}
+			}
+		}
+
+		// Also check for properties that might not be enumerable
+		const propertyNames = Object.getOwnPropertyNames(obj);
+		for (const key of propertyNames) {
+			if (!result.hasOwnProperty(key)) {
+				try {
+					const value = obj[key];
+					if (typeof value !== 'function' && value !== undefined) {
+						result[key] = convertToPlainObject(value);
+					}
+				} catch (error) {
+					// Skip properties that can't be accessed
+				}
+			}
+		}
+	} catch (error) {
+		// If we can't iterate properties, return a string representation
+		return obj.toString ? obj.toString() : String(obj);
+	}
+
+	return result;
+}
+
 export class IfcExtractor implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'IFC Extractor',
@@ -233,10 +295,14 @@ function extractAllElements(ifcApi: WebIFC.IfcAPI, modelID: number) {
 	for (const lineID of lineArray) {
 		try {
 			const element = ifcApi.GetLine(modelID, lineID);
+			
+			// Convert web-ifc object to plain JSON object
+			const jsonElement = convertToPlainObject(element);
+			
 			allElements.push({
 				id: lineID,
 				type: element.constructor.name,
-				data: element,
+				data: jsonElement,
 			});
 		} catch (error) {
 			// Skip elements that can't be read
@@ -270,10 +336,14 @@ function extractElementsByType(ifcApi: WebIFC.IfcAPI, modelID: number, ifcType: 
 		for (const elementID of elementArray) {
 			try {
 				const element = ifcApi.GetLine(modelID, elementID);
+				
+				// Convert web-ifc object to plain JSON object
+				const jsonElement = convertToPlainObject(element);
+				
 				elements.push({
 					id: elementID,
 					type: ifcType,
-					data: element,
+					data: jsonElement,
 				});
 			} catch (error) {
 				// Skip elements that can't be read
@@ -330,16 +400,19 @@ function extractProperties(ifcApi: WebIFC.IfcAPI, modelID: number, elementIds: n
 		try {
 			const element = ifcApi.GetLine(modelID, elementId);
 			
+			// Convert web-ifc object to plain JSON object
+			const jsonElement = convertToPlainObject(element);
+			
 			// Extract properties from the element itself
 			const properties = {
-				...element,
+				...jsonElement,
 				// Add any additional property extraction logic here
 			};
 
 			results.push({
 				id: elementId,
 				type: element.constructor.name,
-				element,
+				element: jsonElement,
 				properties,
 			});
 		} catch (error) {
