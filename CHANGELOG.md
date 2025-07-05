@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.2] - 2025-07-05
+
+### Fixed
+- **TypeScript Type Errors**: Fixed type handling in direct GLB writer
+  - Properly convert Three.js BufferAttribute arrays to typed arrays for vertex and index data
+  - Fixed accessor count calculation to use Math.floor for integer values  
+  - Resolved "Argument of type 'unknown' is not assignable to parameter of type 'number'" errors
+  - Direct GLB writer now handles all mesh data types correctly
+
+### Enhanced
+- **Type Safety**: Improved type safety throughout GLB export pipeline
+  - Better error handling for typed array conversions
+  - More robust vertex and index data processing
+
 ## [0.6.1] - 2025-07-05
 
 ### Fixed
