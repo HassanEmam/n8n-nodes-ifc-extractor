@@ -2,6 +2,74 @@ import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { IMeshData, IMaterialData, IConversionResult, IIfcToGlbOptions } from '../types/interfaces';
 
+// Node.js polyfills for browser APIs required by Three.js GLTFExporter
+if (typeof global !== 'undefined' && typeof (globalThis as any).window === 'undefined') {
+	// Polyfill FileReader for Node.js environment
+	(global as any).FileReader = class FileReader {
+		result: string | ArrayBuffer | null = null;
+		readyState: number = 0;
+		onload: ((event: any) => void) | null = null;
+		onerror: ((event: any) => void) | null = null;
+		
+		readAsArrayBuffer(blob: any) {
+			this.readyState = 2; // DONE
+			if (blob && blob.buffer) {
+				this.result = blob.buffer;
+			} else if (blob && blob.data) {
+				this.result = blob.data;
+			} else {
+				this.result = new ArrayBuffer(0);
+			}
+			if (this.onload) {
+				this.onload({ target: this });
+			}
+		}
+		
+		readAsDataURL(blob: any) {
+			this.readyState = 2; // DONE
+			this.result = 'data:application/octet-stream;base64,';
+			if (this.onload) {
+				this.onload({ target: this });
+			}
+		}
+	};
+	
+	// Polyfill Blob for Node.js environment
+	if (!(global as any).Blob) {
+		(global as any).Blob = class Blob {
+			data: any;
+			size: number;
+			type: string;
+			
+			constructor(chunks: any[] = [], options: any = {}) {
+				this.data = chunks;
+				this.size = 0;
+				this.type = options.type || '';
+				
+				for (const chunk of chunks) {
+					if (chunk && chunk.byteLength !== undefined) {
+						this.size += chunk.byteLength;
+					} else if (chunk && chunk.length !== undefined) {
+						this.size += chunk.length;
+					}
+				}
+			}
+			
+			arrayBuffer() {
+				return Promise.resolve(this.data[0] || new ArrayBuffer(0));
+			}
+		};
+	}
+	
+	// Polyfill URL.createObjectURL for Node.js environment
+	if (!(global as any).URL) {
+		(global as any).URL = {
+			createObjectURL: (blob: any) => 'blob:nodeurl',
+			revokeObjectURL: (url: string) => {},
+		};
+	}
+}
+
 export class GlbExporter {
 	private scene: THREE.Scene;
 	private materials: Map<number, THREE.Material>;

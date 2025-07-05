@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-ifc-extractor",
-  "version": "0.5.9",
+  "version": "0.6.0",
   "description": "Custom n8n node for extracting information from IFC files using web-ifc",
   "keywords": [
     "n8n-community-node-package",

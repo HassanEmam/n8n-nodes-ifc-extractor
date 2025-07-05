@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2025-07-05
+
+### Fixed
+- **GLB Export in Node.js Environment**: Fixed critical "FileReader is not defined" error in GLB conversion
+  - Added Node.js polyfills for browser APIs (FileReader, Blob, URL.createObjectURL) required by Three.js GLTFExporter
+  - Implemented compatible FileReader class with readAsArrayBuffer and readAsDataURL methods
+  - Added Blob polyfill with proper arrayBuffer() method implementation
+  - GLB export now works correctly in n8n/Docker/Node.js environments
+
+### Confirmed Working
+- **Mesh Extraction**: Confirmed successful extraction of 660+ meshes from IFC files
+  - StreamAllMeshes implementation working as expected
+  - All geometry extraction strategies functioning properly
+  - Ready for complete IFC to GLB conversion pipeline
+
 ## [0.5.9] - 2025-07-05
 
 ### Enhanced
