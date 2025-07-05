@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.5] - 2025-01-09
+
+### Fixed
+- **TypeScript Compatibility**: Fixed TypeScript build errors caused by incompatible zod dependency
+  - Added package override to force zod 1.11.17 which is compatible with TypeScript 4.8.4
+  - Resolved 119 TypeScript compilation errors related to modern const type parameters
+  - Build now compiles successfully without errors
+
+### Enhanced
+- **Debug Logging**: Enhanced debug output for IFC file loading and WASM path detection
+- **Binary Data Extraction**: Improved binary data extraction logic to handle various n8n property structures
+- **Error Messages**: Better error messages for model loading failures with detailed debug information
+
 ## [0.5.2] - 2025-07-05
 
 ### Fixed
