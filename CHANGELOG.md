@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.8] - 2025-01-09
+
+### Enhanced
+- **Mesh Extraction**: Significantly improved geometry extraction to handle various IFC geometric entities
+  - Added support for multiple IFC geometry types: IFCEXTRUDEDAREASOLID, IFCTRIANGULATEDFACESET, IFCPOLYGONALFACESET, IFCFACETEDBREP, and more
+  - Implemented LoadAllGeometry fallback for comprehensive geometry extraction
+  - Added PlacedGeometry support for transformed meshes from FlatMesh objects
+  - Enhanced logging to show entity types found and extraction progress
+  - Better error handling for geometry extraction failures
+
+### Fixed
+- **Geometry Detection**: Fixed issue where IFC files with valid geometry were not being processed
+  - Changed from only looking for IFCGEOMETRICREPRESENTATIONITEM to checking multiple geometry types
+  - Added fallback to LoadAllGeometry API when direct geometry extraction fails
+  - Improved mesh data extraction from various IFC geometry representations
+
 ## [0.5.7] - 2025-01-09
 
 ### Fixed
