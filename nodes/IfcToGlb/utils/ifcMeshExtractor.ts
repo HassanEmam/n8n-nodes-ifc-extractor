@@ -310,26 +310,102 @@ export class IfcMeshExtractor {
 			throw new Error(errorMsg);
 		}
 
-		console.log(`Starting mesh extraction for model ID: ${this.modelId}`);
+		console.log(`=== Starting mesh extraction for model ID: ${this.modelId} ===`);
 		const meshes: IMeshData[] = [];
 		
-		// Get all geometric representation items
-		const geometries = this.api.GetLineIDsWithType(this.modelId, WebIFC.IFCGEOMETRICREPRESENTATIONITEM);
-		
-		for (const geometryId of geometries) {
-			try {
-				const geometry = this.api.GetGeometry(this.modelId, geometryId);
-				if (geometry && geometry.GetVertexDataSize() > 0) {
-					const meshData = this.extractMeshFromGeometry(geometry, geometryId);
-					if (meshData) {
-						meshes.push(meshData);
+		// First, let's see what types of entities we have in the model
+		try {
+			const allLines = this.api.GetAllLines(this.modelId);
+			console.log(`Total lines in model: ${allLines.size()}`);
+			
+			// Check for common IFC geometric entities
+			const geometricTypes = [
+				'IFCGEOMETRICREPRESENTATIONITEM',
+				'IFCEXTRUDEDAREASOLID',
+				'IFCTRIANGULATEDFACESET',
+				'IFCPOLYGONALFACESET',
+				'IFCFACETEDBREP',
+				'IFCSHELLBASEDSURFACEMODEL',
+				'IFCMANIFOLDSOLIDBREP',
+				'IFCADVANCEDBREP',
+				'IFCCSGSOLID',
+				'IFCSWEPTAREASOLID',
+				'IFCSWEPTDISCSOLID',
+				'IFCBOOLEANRESULT',
+			];
+			
+			for (const typeName of geometricTypes) {
+				try {
+					const typeId = (WebIFC as any)[typeName] as number;
+					if (typeId !== undefined) {
+						const entities = this.api.GetLineIDsWithType(this.modelId, typeId);
+						console.log(`Found ${entities.size()} entities of type ${typeName} (ID: ${typeId})`);
+						
+						// Try the direct geometry approach for these entities
+						for (let i = 0; i < entities.size(); i++) {
+							const entityId = entities.get(i);
+							try {
+								console.log(`Attempting to get geometry for ${typeName} entity ${entityId}...`);
+								const geometry = this.api.GetGeometry(this.modelId, entityId);
+								if (geometry && geometry.GetVertexDataSize() > 0) {
+									console.log(`Found geometry data: ${geometry.GetVertexDataSize()} vertex bytes, ${geometry.GetIndexDataSize()} index bytes`);
+									const meshData = this.extractMeshFromGeometry(geometry, entityId);
+									if (meshData) {
+										meshes.push(meshData);
+										console.log(`Successfully extracted mesh from ${typeName} entity ${entityId}`);
+									}
+								} else {
+									console.log(`No geometry data for ${typeName} entity ${entityId}`);
+								}
+							} catch (geomError) {
+								console.warn(`Failed to get geometry for ${typeName} entity ${entityId}:`, geomError);
+							}
+						}
 					}
+				} catch (typeError) {
+					console.warn(`Type ${typeName} not available or error:`, typeError);
 				}
-			} catch (error) {
-				console.warn(`Failed to extract geometry for ID ${geometryId}:`, error);
 			}
+			
+			// Alternative approach: Try LoadAllGeometry
+			if (meshes.length === 0) {
+				console.log('No meshes found with direct approach, trying LoadAllGeometry...');
+				try {
+					const allGeometry = this.api.LoadAllGeometry(this.modelId);
+					console.log(`LoadAllGeometry returned ${allGeometry.size()} geometry items`);
+					
+					for (let i = 0; i < allGeometry.size(); i++) {
+						const flatMesh = allGeometry.get(i);
+						console.log(`Processing FlatMesh ${i}: expressID=${flatMesh.expressID}, geometries=${flatMesh.geometries.size()}`);
+						
+						// Convert FlatMesh to our IMeshData format using PlacedGeometry
+						for (let j = 0; j < flatMesh.geometries.size(); j++) {
+							const placedGeom = flatMesh.geometries.get(j);
+							if (placedGeom) {
+								console.log(`Converting placed geometry ${j} with transformation`);
+								try {
+									// Extract geometry data from PlacedGeometry
+									const meshData = this.extractMeshFromPlacedGeometry(placedGeom, flatMesh.expressID);
+									if (meshData) {
+										meshes.push(meshData);
+										console.log(`Successfully converted FlatMesh placed geometry ${j}`);
+									}
+								} catch (placedGeomError) {
+									console.warn(`Failed to convert placed geometry ${j}:`, placedGeomError);
+								}
+							}
+						}
+					}
+				} catch (loadAllError) {
+					console.error('LoadAllGeometry failed:', loadAllError);
+				}
+			}
+			
+		} catch (extractionError) {
+			console.error('Error during mesh extraction:', extractionError);
 		}
 
+		console.log(`=== Mesh extraction completed: ${meshes.length} meshes found ===`);
 		return meshes;
 	}
 
@@ -371,6 +447,81 @@ export class IfcMeshExtractor {
 			};
 		} catch (error) {
 			console.warn(`Failed to process geometry data for ID ${id}:`, error);
+			return null;
+		}
+	}
+
+	private extractMeshFromPlacedGeometry(placedGeom: WebIFC.PlacedGeometry, id: number): IMeshData | null {
+		try {
+			// PlacedGeometry contains vertex data directly in a flat array
+			const vertexArray = placedGeom.flatTransformation;
+			
+			if (!vertexArray || vertexArray.length === 0) {
+				console.log(`No vertex data in placed geometry for ID ${id}`);
+				return null;
+			}
+			
+			console.log(`PlacedGeometry ID ${id}: ${vertexArray.length} total values in flat array`);
+			
+			// The flat transformation contains vertices in groups
+			// Each vertex typically has 6 values: x, y, z, nx, ny, nz (position + normal)
+			const valuesPerVertex = 6;
+			const vertexCount = Math.floor(vertexArray.length / valuesPerVertex);
+			
+			if (vertexCount < 3) {
+				console.log(`Insufficient vertices (${vertexCount}) for ID ${id}`);
+				return null;
+			}
+			
+			console.log(`Extracting ${vertexCount} vertices from placed geometry ID ${id}`);
+			
+			const vertices = new Float32Array(vertexCount * 3);
+			const normals = new Float32Array(vertexCount * 3);
+			
+			for (let i = 0; i < vertexCount; i++) {
+				const baseIndex = i * valuesPerVertex;
+				const vertexIndex = i * 3;
+				
+				// Position
+				vertices[vertexIndex] = vertexArray[baseIndex];
+				vertices[vertexIndex + 1] = vertexArray[baseIndex + 1];
+				vertices[vertexIndex + 2] = vertexArray[baseIndex + 2];
+				
+				// Normal (if available)
+				if (baseIndex + 5 < vertexArray.length) {
+					normals[vertexIndex] = vertexArray[baseIndex + 3];
+					normals[vertexIndex + 1] = vertexArray[baseIndex + 4];
+					normals[vertexIndex + 2] = vertexArray[baseIndex + 5];
+				} else {
+					// Default normal pointing up if not available
+					normals[vertexIndex] = 0;
+					normals[vertexIndex + 1] = 0;
+					normals[vertexIndex + 2] = 1;
+				}
+			}
+			
+			// Create indices for triangulation (assuming triangular faces)
+			const indexCount = Math.floor(vertexCount / 3) * 3;
+			const indices = new Uint32Array(indexCount);
+			for (let i = 0; i < indexCount; i++) {
+				indices[i] = i;
+			}
+			
+			const geometryData: IGeometryData = {
+				vertices,
+				indices,
+				normals,
+			};
+			
+			console.log(`Successfully created mesh from PlacedGeometry ID ${id}: ${vertexCount} vertices, ${indices.length} indices`);
+			
+			return {
+				id,
+				geometry: geometryData,
+				name: `PlacedMesh_${id}`,
+			};
+		} catch (error) {
+			console.warn(`Failed to process placed geometry data for ID ${id}:`, error);
 			return null;
 		}
 	}
