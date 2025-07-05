@@ -179,14 +179,46 @@ export class IfcToGlb implements INodeType {
 						fileName: binaryData.fileName,
 						dataLength: binaryData.data?.length || 0
 					});
+
+					// Convert to ArrayBuffer - handle different data formats
+					let ifcDataString: string;
+					const data = binaryData.data as any;
 					
-					// Convert base64 string to ArrayBuffer
-					const binaryString = atob(binaryData.data);
-					const bytes = new Uint8Array(binaryString.length);
-					for (let j = 0; j < binaryString.length; j++) {
-						bytes[j] = binaryString.charCodeAt(j);
+					if (typeof data === 'string') {
+						ifcDataString = data;
+					} else if (Buffer.isBuffer(data)) {
+						ifcDataString = data.toString('base64');
+					} else {
+						throw new NodeOperationError(this.getNode(), 'Unsupported binary data format');
 					}
-					ifcData = bytes.buffer;
+					
+					console.log('Data string length:', ifcDataString.length);
+					console.log('First 100 characters:', ifcDataString.substring(0, 100));
+					
+					// Check if the data looks like base64 or raw text
+					const isBase64 = /^[A-Za-z0-9+/]*={0,2}$/.test(ifcDataString.substring(0, 100));
+					console.log('Data appears to be base64:', isBase64);
+					
+					if (isBase64) {
+						// Decode base64 to binary
+						try {
+							const binaryString = atob(ifcDataString);
+							const bytes = new Uint8Array(binaryString.length);
+							for (let j = 0; j < binaryString.length; j++) {
+								bytes[j] = binaryString.charCodeAt(j);
+							}
+							ifcData = bytes.buffer;
+							console.log('Successfully decoded base64 data to ArrayBuffer');
+						} catch (error) {
+							console.error('Failed to decode base64:', error);
+							throw new NodeOperationError(this.getNode(), 'Failed to decode base64 IFC data');
+						}
+					} else {
+						// Data is already text, convert directly to ArrayBuffer
+						console.log('Converting text data directly to ArrayBuffer');
+						const encoder = new TextEncoder();
+						ifcData = encoder.encode(ifcDataString).buffer;
+					}
 				} else {
 					// inputData mode - look for binary data in the main data property
 					console.log('Looking for binary data in main data property');

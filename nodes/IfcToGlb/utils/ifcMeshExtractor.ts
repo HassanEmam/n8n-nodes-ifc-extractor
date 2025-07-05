@@ -218,32 +218,76 @@ export class IfcMeshExtractor {
 			
 			try {
 				console.log('Attempting to open IFC model...');
-				this.modelId = this.api.OpenModel(uint8Array);
-				console.log(`OpenModel returned ID: ${this.modelId}`);
+				console.log(`File size: ${uint8Array.length} bytes`);
+				console.log(`First 50 bytes as hex: ${Array.from(uint8Array.slice(0, 50)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
 				
-				// Validate that the model was actually loaded
-				if (this.modelId === null || this.modelId === undefined || this.modelId <= 0) {
+				this.modelId = this.api.OpenModel(uint8Array);
+				console.log(`OpenModel returned ID: ${this.modelId} (type: ${typeof this.modelId})`);
+				
+				// Check for obvious failures first
+				if (this.modelId === null || this.modelId === undefined || this.modelId === -1) {
 					const debugInfo = {
 						modelId: this.modelId,
+						modelIdType: typeof this.modelId,
 						fileSize: uint8Array.length,
 						firstBytes: firstBytes,
-						header: ifcHeader.substring(0, 50)
+						header: ifcHeader.substring(0, 50),
+						wasmInitialized: !!this.api
 					};
-					console.error('Invalid model ID - Debug info:', debugInfo);
-					throw new Error(`Invalid model ID returned: ${this.modelId}. This usually means the IFC file is corrupted or invalid.`);
+					console.error('Model loading definitely failed (null/undefined/-1) - Debug info:', debugInfo);
+					throw new Error(`Model loading failed: ${this.modelId}. Web-ifc could not parse the IFC file.`);
 				}
 				
-				// Try to get basic model info to verify it's working
+				// For other values (including 0), try to validate by checking if we can get data
+				let modelValidated = false;
+				let lineCount = 0;
+				
 				try {
+					console.log(`Attempting to validate model with ID ${this.modelId}...`);
 					const allLines = this.api.GetAllLines(this.modelId);
-					console.log(`Model validation: Found ${allLines.size()} lines in IFC model`);
+					lineCount = allLines.size();
+					console.log(`Model validation: Found ${lineCount} lines in IFC model`);
 					
-					if (allLines.size() === 0) {
-						throw new Error('Model appears to be empty (no lines found)');
+					if (lineCount > 0) {
+						modelValidated = true;
+						console.log(`Model ID ${this.modelId} is valid - contains ${lineCount} lines`);
+					} else {
+						console.warn(`Model ID ${this.modelId} appears empty (0 lines)`);
 					}
 				} catch (validationError) {
-					console.warn('Model validation failed:', validationError);
-					throw new Error(`Model loaded but validation failed: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`);
+					console.error('Model validation failed:', validationError);
+					
+					// Try to get more detailed error information for debugging
+					try {
+						const textContent = new TextDecoder('utf-8', { fatal: false }).decode(uint8Array.slice(0, 1000));
+						console.log(`First 1000 chars as text: "${textContent}"`);
+						
+						// Check for common file issues
+						const hasProperEnding = textContent.includes('END-ISO-10303-21');
+						const hasDataSection = textContent.includes('DATA;');
+						const hasEnditSection = textContent.includes('ENDSEC;');
+						
+						console.log(`File structure check - Proper ending: ${hasProperEnding}, Data section: ${hasDataSection}, Endsec: ${hasEnditSection}`);
+						
+					} catch (textError) {
+						console.warn('Could not decode file as text for debugging:', textError);
+					}
+				}
+				
+				// Final decision: if we couldn't validate the model, consider it failed
+				if (!modelValidated) {
+					const debugInfo = {
+						modelId: this.modelId,
+						modelIdType: typeof this.modelId,
+						fileSize: uint8Array.length,
+						lineCount: lineCount,
+						firstBytes: firstBytes,
+						header: ifcHeader.substring(0, 50),
+						wasmInitialized: !!this.api
+					};
+					console.error('Model validation failed - treating as invalid - Debug info:', debugInfo);
+					this.modelId = null;
+					throw new Error(`Model ID ${this.modelId} could not be validated. No data could be extracted from the IFC file.`);
 				}
 				
 			} catch (modelError) {
@@ -260,7 +304,7 @@ export class IfcMeshExtractor {
 	}
 
 	async extractMeshes(): Promise<IMeshData[]> {
-		if (!this.modelId || this.modelId < 0) {
+		if (this.modelId === null || this.modelId === undefined) {
 			const errorMsg = `No valid IFC model loaded. Model ID: ${this.modelId}. Call loadIfcFile() first.`;
 			console.error(errorMsg);
 			throw new Error(errorMsg);
