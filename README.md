@@ -19,10 +19,13 @@ After installation, the **IFC Extractor** node will be available in your n8n ins
 ## Operations
 
 ### Extract All Elements
-Extracts all elements from the IFC file and returns them with their types and properties.
+Extracts all elements from the IFC file and returns them with their types and data. Optionally includes resolved properties from property sets.
 
 ### Extract by Type
-Extracts only elements of a specific IFC type (e.g., IFCWALL, IFCDOOR, IFCWINDOW, etc.).
+Extracts only elements of a specific IFC type (e.g., IFCWALL, IFCDOOR, IFCWINDOW, etc.). Optionally includes resolved properties from property sets.
+
+### Extract Elements with Properties
+Specialized operation that extracts elements and automatically resolves their properties using IFC relationships (IfcRelDefinesByProperties). Returns only elements that have properties attached.
 
 ### Get File Info
 Returns basic information about the IFC file, including total element count and statistics by type.
@@ -37,10 +40,29 @@ Extracts detailed properties for specific elements by their IDs.
 - **File Path**: Specify a direct file path to the IFC file
 
 ### Parameters
+- **Include Properties**: Whether to automatically resolve and include element properties (for Extract All/By Type operations)
 - **IFC Type**: When using "Extract by Type", specify the IFC entity type (e.g., IFCWALL, IFCDOOR)
+- **Filter Elements**: When using "Extract Elements with Properties", specify comma-separated IFC types to include (leave empty for all)
 - **Element IDs**: When using "Extract Properties", provide comma-separated element IDs
 - **Binary Property**: Name of the binary property containing the IFC data (default: "data")
 - **File Path**: Direct path to the IFC file when using file path input
+
+## Property Resolution
+
+The node can automatically resolve element properties by following IFC relationships:
+
+- **IfcRelDefinesByProperties**: Links elements to property sets
+- **IfcPropertySet**: Contains groups of properties
+- **IfcPropertySingleValue**: Individual property values
+- **IfcPropertyEnumeratedValue**: Properties with enumerated values
+- **IfcPropertyListValue**: Properties with multiple values
+- **IfcPropertyBoundedValue**: Properties with upper/lower bounds
+
+Properties are organized by property set name and include:
+- Property name and description
+- Property value (with proper type conversion)
+- Property units (when available)
+- Property type information
 
 ## Usage Examples
 
