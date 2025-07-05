@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2025-07-05
+
+### Fixed
+- **GLB Export Performance**: Major optimization to prevent hanging during GLB conversion
+  - Implemented mesh batching to group meshes by material (max 100 meshes per batch)
+  - Added geometry merging to reduce the number of objects processed by GLTFExporter
+  - Added 30-second timeout to prevent infinite hanging
+  - Simplified Node.js polyfills to reduce complexity and potential conflicts
+  - Based approach on proven ifc2gltf example using optimized Three.js workflow
+
+### Enhanced
+- **Memory Management**: Improved memory usage during GLB export
+  - Disposed individual geometries after merging to free memory
+  - Batch processing to prevent overwhelming the GPU/memory
+  - Optimized material grouping to reduce draw calls
+
+### Technical
+- **Architecture**: Completely rewrote GLB exporter for better performance
+  - Removed complex scene management in favor of direct object export
+  - Implemented geometry batching based on Three.js best practices
+  - Added comprehensive error handling and timeout mechanisms
+
+## [0.6.0] - 2025-07-05ngelog
+
+All notable changes to this project will be documented in this file.
+
+## [0.6.1] - 2025-07-05
+
+### Fixed
+- **GLB Export Hanging Issue**: Resolved workflow getting stuck at GLB conversion step
+  - Added 60-second timeout to prevent infinite hanging during GLB export
+  - Implemented mesh batching (max 100 meshes per batch) to handle large scenes efficiently
+  - Enhanced FileReader polyfill with proper async behavior using setTimeout
+  - Added comprehensive logging throughout GLB export process for debugging
+  - Added performance warnings for scenes with >1M vertices
+
+### Enhanced
+- **Large Scene Handling**: Optimized for processing 660+ meshes without hanging
+  - Batch processing to prevent memory issues with large numbers of meshes
+  - Progress logging during mesh processing
+  - Better error handling with try-catch around GLTFExporter.parse
+
 ## [0.6.0] - 2025-07-05
 
 ### Fixed
