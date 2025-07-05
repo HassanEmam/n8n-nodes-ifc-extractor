@@ -218,29 +218,65 @@ export class IfcToGlb implements INodeType {
 							}
 						}
 					}
-					
-					if (!binaryData) {
-						console.error('No binary data found. Item structure:', JSON.stringify(items[i], null, 2));
-						throw new NodeOperationError(this.getNode(), 'No IFC data found in input. Make sure the HTTP Request node output format is set to "file".');
-					}
-					
-					console.log('Found binary data:', {
-						mimeType: binaryData.mimeType,
-						fileName: binaryData.fileName,
-						dataLength: binaryData.data?.length || 0
-					});
-					
-					// Convert base64 string to ArrayBuffer
-					const binaryString = atob(binaryData.data);
-					const bytes = new Uint8Array(binaryString.length);
-					for (let j = 0; j < binaryString.length; j++) {
-						bytes[j] = binaryString.charCodeAt(j);
-					}
-					ifcData = bytes.buffer;
+								if (!binaryData) {
+					console.error('No binary data found. Item structure:', JSON.stringify(items[i], null, 2));
+					throw new NodeOperationError(this.getNode(), 'No IFC data found in input. Make sure the HTTP Request node output format is set to "file".');
+				}
+
+				console.log('Found binary data:', {
+					mimeType: binaryData.mimeType,
+					fileName: binaryData.fileName,
+					dataLength: binaryData.data?.length || 0
+				});
+
+				// Convert to ArrayBuffer - handle different data formats
+				let ifcDataString: string;
+				const data = binaryData.data as any;
+				
+				if (typeof data === 'string') {
+					ifcDataString = data;
+				} else if (Buffer.isBuffer(data)) {
+					ifcDataString = data.toString('base64');
+				} else {
+					throw new NodeOperationError(this.getNode(), 'Unsupported binary data format');
 				}
 				
-				console.log('=== IFC Data Extracted Successfully ===');
-				console.log('Final ArrayBuffer size:', ifcData.byteLength, 'bytes');
+				console.log('Data string length:', ifcDataString.length);
+				console.log('First 100 characters:', ifcDataString.substring(0, 100));
+				
+				// Check if the data looks like base64 or raw text
+				const isBase64 = /^[A-Za-z0-9+/]*={0,2}$/.test(ifcDataString.substring(0, 100));
+				console.log('Data appears to be base64:', isBase64);
+				
+				if (isBase64) {
+					// Decode base64 to binary
+					try {
+						const binaryString = atob(ifcDataString);
+						const bytes = new Uint8Array(binaryString.length);
+						for (let j = 0; j < binaryString.length; j++) {
+							bytes[j] = binaryString.charCodeAt(j);
+						}
+						ifcData = bytes.buffer;
+						console.log('Successfully decoded base64 data to ArrayBuffer');
+					} catch (error) {
+						console.error('Failed to decode base64:', error);
+						throw new NodeOperationError(this.getNode(), 'Failed to decode base64 IFC data');
+					}
+				} else {
+					// Data is already text, convert directly to ArrayBuffer
+					console.log('Converting text data directly to ArrayBuffer');
+					const encoder = new TextEncoder();
+					ifcData = encoder.encode(ifcDataString).buffer;
+				}
+			}
+			
+			console.log('=== IFC Data Extracted Successfully ===');
+			console.log('Final ArrayBuffer size:', ifcData.byteLength, 'bytes');
+			
+			// Log first few bytes for debugging
+			const firstBytes = new Uint8Array(ifcData, 0, Math.min(50, ifcData.byteLength));
+			const firstChars = Array.from(firstBytes).map(b => String.fromCharCode(b)).join('');
+			console.log('First 50 characters of IFC data:', firstChars);
 
 				// Set default options
 				const options: IIfcToGlbOptions = {

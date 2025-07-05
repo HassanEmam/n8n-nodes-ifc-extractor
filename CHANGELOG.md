@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.6] - 2025-01-09
+
+### Fixed
+- **Binary Data Handling**: Improved binary data extraction to handle both base64 encoded and raw text data
+  - Added detection for different data formats (base64 vs text)
+  - Fixed issue where HTTP Request nodes downloading IFC files as text/plain were causing parsing failures
+  - Enhanced debug logging to show data format and conversion process
+  - Properly handle both binary and text data sources from different n8n node outputs
+
+### Enhanced
+- **Debug Information**: Added more detailed logging for binary data processing and format detection
+
 ## [0.5.5] - 2025-01-09
 
 ### Fixed
