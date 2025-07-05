@@ -381,209 +381,121 @@ export class GlbExporter {
 
 	private async createDirectGLB(object: THREE.Object3D, options: IIfcToGlbOptions): Promise<ArrayBuffer> {
 		console.log('Creating direct GLB...');
-		
-		// Create a minimal glTF structure
-		const gltf: any = {
-			asset: {
-				generator: 'n8n-nodes-ifc-extractor',
-				version: '2.0'
-			},
-			scene: 0,
-			scenes: [{ nodes: [0] }],
-			nodes: [{ mesh: 0 }],
-			meshes: [],
-			accessors: [],
-			bufferViews: [],
-			buffers: [],
-			materials: []
-		};
-		
+
 		// Collect all geometry data
 		const allVertices: number[] = [];
 		const allIndices: number[] = [];
-		const primitives: any[] = [];
 		let vertexOffset = 0;
-		
-		// Process each mesh in the object
+
 		object.traverse((child) => {
 			if (child instanceof THREE.Mesh && child.geometry) {
 				const geometry = child.geometry;
 				const positionAttr = geometry.getAttribute('position');
 				const indexAttr = geometry.getIndex();
-				
 				if (!positionAttr || !indexAttr) return;
-				
-				// Handle different typed array types properly
 				const positionArray = positionAttr.array;
-				const vertices: number[] = [];
-				for (let i = 0; i < positionArray.length; i++) {
-					vertices.push(positionArray[i] as number);
-				}
-				
 				const indexArray = indexAttr.array;
-				const indices: number[] = [];
-				for (let i = 0; i < indexArray.length; i++) {
-					indices.push(indexArray[i] as number);
-				}
-				
-				// Add vertices to combined array
-				allVertices.push(...vertices);
-				
-				// Add indices with vertex offset
-				const offsetIndices = indices.map(i => i + Math.floor(vertexOffset / 3));
-				allIndices.push(...offsetIndices);
-				
-				// Create primitive for this mesh
-				primitives.push({
-					attributes: {
-						POSITION: 0 // Will be updated after we create accessors
-					},
-					indices: 1, // Will be updated
-					material: 0
-				});
-				
-				vertexOffset += vertices.length;
+				for (let i = 0; i < positionArray.length; i++) allVertices.push(positionArray[i] as number);
+				for (let i = 0; i < indexArray.length; i++) allIndices.push((indexArray[i] as number) + vertexOffset / 3);
+				vertexOffset += positionArray.length;
 			}
 		});
-		
-		if (allVertices.length === 0) {
-			throw new Error('No geometry data found to export');
-		}
-		
-		console.log(`Collected ${allVertices.length / 3} vertices and ${allIndices.length} indices`);
-		
-		// Create binary data
+
+		if (allVertices.length === 0) throw new Error('No geometry data found to export');
+
 		const vertexData = new Float32Array(allVertices);
 		const indexData = new Uint32Array(allIndices);
-		
-		// Calculate buffer sizes
 		const vertexByteLength = vertexData.byteLength;
 		const indexByteLength = indexData.byteLength;
 		const totalByteLength = vertexByteLength + indexByteLength;
-		
-		// Create combined buffer
 		const buffer = new ArrayBuffer(totalByteLength);
-		const vertexView = new Float32Array(buffer, 0, vertexData.length);
-		const indexView = new Uint32Array(buffer, vertexByteLength, indexData.length);
-		
-		vertexView.set(vertexData);
-		indexView.set(indexData);
-		
-		// Create glTF buffer views and accessors
-		gltf.buffers = [{
-			byteLength: totalByteLength
-		}];
-		
-		gltf.bufferViews = [
-			{
-				buffer: 0,
-				byteOffset: 0,
-				byteLength: vertexByteLength,
-				target: 34962 // ARRAY_BUFFER
-			},
-			{
-				buffer: 0,
-				byteOffset: vertexByteLength,
-				byteLength: indexByteLength,
-				target: 34963 // ELEMENT_ARRAY_BUFFER
-			}
-		];
-		
-		gltf.accessors = [
-			{
-				bufferView: 0,
-				componentType: 5126, // FLOAT
-				count: Math.floor(allVertices.length / 3),
-				type: 'VEC3',
-				min: [
-					Math.min(...allVertices.filter((_, i) => i % 3 === 0)),
-					Math.min(...allVertices.filter((_, i) => i % 3 === 1)),
-					Math.min(...allVertices.filter((_, i) => i % 3 === 2))
-				],
-				max: [
-					Math.max(...allVertices.filter((_, i) => i % 3 === 0)),
-					Math.max(...allVertices.filter((_, i) => i % 3 === 1)),
-					Math.max(...allVertices.filter((_, i) => i % 3 === 2))
-				]
-			},
-			{
-				bufferView: 1,
-				componentType: 5125, // UNSIGNED_INT
-				count: allIndices.length,
-				type: 'SCALAR'
-			}
-		];
-		
-		// Create default material
-		gltf.materials = [{
-			pbrMetallicRoughness: {
-				baseColorFactor: [0.8, 0.8, 0.8, 1.0],
-				metallicFactor: 0.0,
-				roughnessFactor: 0.5
-			}
-		}];
-		
-		// Create single mesh with all primitives combined
-		gltf.meshes = [{
-			primitives: [{
-				attributes: {
-					POSITION: 0
+		new Float32Array(buffer, 0, vertexData.length).set(vertexData);
+		new Uint32Array(buffer, vertexByteLength, indexData.length).set(indexData);
+
+		// Calculate min/max for position accessor
+		let minX = Infinity, minY = Infinity, minZ = Infinity;
+		let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+		for (let i = 0; i < vertexData.length; i += 3) {
+			const x = vertexData[i], y = vertexData[i + 1], z = vertexData[i + 2];
+			if (x < minX) minX = x; if (x > maxX) maxX = x;
+			if (y < minY) minY = y; if (y > maxY) maxY = y;
+			if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+		}
+
+		// Build valid glTF structure
+		const gltf: any = {
+			asset: { version: '2.0', generator: 'n8n-nodes-ifc-extractor' },
+			scene: 0,
+			scenes: [{ nodes: [0] }],
+			nodes: [{ name: 'IFC_Model', mesh: 0 }],
+			meshes: [{
+				name: 'MergedMesh',
+				primitives: [{
+					attributes: { POSITION: 0 },
+					indices: 1,
+					material: 0
+				}]
+			}],
+			materials: [{
+				pbrMetallicRoughness: {
+					baseColorFactor: [0.8, 0.8, 0.8, 1.0],
+					metallicFactor: 0.0,
+					roughnessFactor: 0.5
+				}
+			}],
+			buffers: [{ byteLength: totalByteLength }],
+			bufferViews: [
+				{ buffer: 0, byteOffset: 0, byteLength: vertexByteLength, target: 34962 },
+				{ buffer: 0, byteOffset: vertexByteLength, byteLength: indexByteLength, target: 34963 }
+			],
+			accessors: [
+				{
+					bufferView: 0,
+					componentType: 5126,
+					count: vertexData.length / 3,
+					type: 'VEC3',
+					min: [minX, minY, minZ],
+					max: [maxX, maxY, maxZ]
 				},
-				indices: 1,
-				material: 0
-			}]
-		}];
-		
-		// Convert to GLB format
-		const jsonString = JSON.stringify(gltf);
-		const jsonBuffer = new TextEncoder().encode(jsonString);
-		
-		// Pad JSON to 4-byte boundary
-		const jsonLength = jsonBuffer.length;
-		const jsonPadding = (4 - (jsonLength % 4)) % 4;
-		const paddedJsonLength = jsonLength + jsonPadding;
-		
+				{
+					bufferView: 1,
+					componentType: 5125,
+					count: indexData.length,
+					type: 'SCALAR'
+				}
+			]
+		};
+
+		// Convert to JSON and pad to 4-byte boundary
+		const jsonBuffer = new TextEncoder().encode(JSON.stringify(gltf));
+		const jsonPadding = (4 - (jsonBuffer.length % 4)) % 4;
+		const paddedJsonLength = jsonBuffer.length + jsonPadding;
+
 		// GLB header: magic (4) + version (4) + length (4) = 12 bytes
 		// JSON chunk header: length (4) + type (4) = 8 bytes
 		// BIN chunk header: length (4) + type (4) = 8 bytes
 		const headerSize = 12 + 8 + paddedJsonLength + 8;
 		const totalGlbLength = headerSize + totalByteLength;
-		
 		const glbBuffer = new ArrayBuffer(totalGlbLength);
 		const view = new DataView(glbBuffer);
 		let offset = 0;
-		
 		// GLB header
-		view.setUint32(offset, 0x46546C67, true); // 'glTF' magic
-		offset += 4;
-		view.setUint32(offset, 2, true); // version
-		offset += 4;
-		view.setUint32(offset, totalGlbLength, true); // total length
-		offset += 4;
-		
+		view.setUint32(offset, 0x46546C67, true); offset += 4; // 'glTF'
+		view.setUint32(offset, 2, true); offset += 4; // version
+		view.setUint32(offset, totalGlbLength, true); offset += 4; // length
 		// JSON chunk
-		view.setUint32(offset, paddedJsonLength, true); // chunk length
-		offset += 4;
-		view.setUint32(offset, 0x4E4F534A, true); // 'JSON' type
-		offset += 4;
-		
+		view.setUint32(offset, paddedJsonLength, true); offset += 4;
+		view.setUint32(offset, 0x4E4F534A, true); offset += 4; // 'JSON'
 		// Copy JSON data
-		const jsonView = new Uint8Array(glbBuffer, offset, jsonLength);
-		jsonView.set(jsonBuffer);
-		offset += paddedJsonLength; // Include padding
-		
+		new Uint8Array(glbBuffer, offset, jsonBuffer.length).set(jsonBuffer);
+		if (jsonPadding > 0) new Uint8Array(glbBuffer, offset + jsonBuffer.length, jsonPadding).fill(0x20); // pad with spaces
+		offset += paddedJsonLength;
 		// BIN chunk
-		view.setUint32(offset, totalByteLength, true); // chunk length
-		offset += 4;
-		view.setUint32(offset, 0x004E4942, true); // 'BIN\0' type
-		offset += 4;
-		
+		view.setUint32(offset, totalByteLength, true); offset += 4;
+		view.setUint32(offset, 0x004E4942, true); offset += 4; // 'BIN\0'
 		// Copy binary data
-		const binView = new Uint8Array(glbBuffer, offset, totalByteLength);
-		binView.set(new Uint8Array(buffer));
-		
-		console.log(`Created GLB: JSON ${jsonLength} bytes, BIN ${totalByteLength} bytes, total ${totalGlbLength} bytes`);
-		
+		new Uint8Array(glbBuffer, offset, totalByteLength).set(new Uint8Array(buffer));
+		console.log(`Created GLB: JSON ${jsonBuffer.length} bytes, BIN ${totalByteLength} bytes, total ${totalGlbLength} bytes`);
 		return glbBuffer;
 	}
 
