@@ -321,16 +321,28 @@ export class GlbExporter {
 		options: IIfcToGlbOptions,
 		timeoutMs: number
 	): Promise<ArrayBuffer> {
+		console.log('Starting GLB export...');
+		
+		// Try direct GLB generation first (faster, more reliable)
+		try {
+			const directGLB = await this.createDirectGLB(object, options);
+			console.log(`Direct GLB export successful: ${directGLB.byteLength} bytes`);
+			return directGLB;
+		} catch (directError) {
+			console.warn('Direct GLB generation failed, falling back to Three.js exporter:', directError);
+		}
+		
+		// Fallback to Three.js exporter with reduced timeout
 		const gltfOptions = {
 			binary: options.outputFormat === 'glb',
-			embedImages: true,
-			maxTextureSize: 4096,
+			embedImages: false, // Disable to speed up
+			maxTextureSize: 1024, // Reduce texture size
 			truncateDrawRange: true,
-			includeCustomExtensions: false, // Simplify for better compatibility
+			includeCustomExtensions: false,
 		};
 		
 		return new Promise<ArrayBuffer>((resolve, reject) => {
-			// Set up timeout
+			// Reduced timeout since we have a backup method
 			const timeout = setTimeout(() => {
 				reject(new Error(`GLB export timed out after ${timeoutMs}ms`));
 			}, timeoutMs);
@@ -342,13 +354,13 @@ export class GlbExporter {
 						clearTimeout(timeout);
 						
 						if (result instanceof ArrayBuffer) {
-							console.log(`GLB export successful: ${result.byteLength} bytes`);
+							console.log(`Three.js GLB export successful: ${result.byteLength} bytes`);
 							resolve(result);
 						} else {
 							// Handle glTF JSON format
 							const jsonString = JSON.stringify(result);
 							const buffer = new TextEncoder().encode(jsonString);
-							console.log(`GLTF export successful: ${buffer.byteLength} bytes`);
+							console.log(`Three.js GLTF export successful: ${buffer.byteLength} bytes`);
 							resolve(buffer.buffer);
 						}
 					},
@@ -365,6 +377,214 @@ export class GlbExporter {
 				reject(new Error(`GLB export setup failed: ${error instanceof Error ? error.message : error}`));
 			}
 		});
+	}
+
+	private async createDirectGLB(object: THREE.Object3D, options: IIfcToGlbOptions): Promise<ArrayBuffer> {
+		console.log('Creating direct GLB...');
+		
+		// Create a minimal glTF structure
+		const gltf: any = {
+			asset: {
+				generator: 'n8n-nodes-ifc-extractor',
+				version: '2.0'
+			},
+			scene: 0,
+			scenes: [{ nodes: [0] }],
+			nodes: [{ mesh: 0 }],
+			meshes: [],
+			accessors: [],
+			bufferViews: [],
+			buffers: [],
+			materials: []
+		};
+		
+		// Collect all geometry data
+		const allVertices: number[] = [];
+		const allIndices: number[] = [];
+		const primitives: any[] = [];
+		let vertexOffset = 0;
+		
+		// Process each mesh in the object
+		object.traverse((child) => {
+			if (child instanceof THREE.Mesh && child.geometry) {
+				const geometry = child.geometry;
+				const positionAttr = geometry.getAttribute('position');
+				const indexAttr = geometry.getIndex();
+				
+				if (!positionAttr || !indexAttr) return;
+				
+				// Handle different typed array types properly
+				const positionArray = positionAttr.array;
+				const vertices: number[] = [];
+				for (let i = 0; i < positionArray.length; i++) {
+					vertices.push(positionArray[i] as number);
+				}
+				
+				const indexArray = indexAttr.array;
+				const indices: number[] = [];
+				for (let i = 0; i < indexArray.length; i++) {
+					indices.push(indexArray[i] as number);
+				}
+				
+				// Add vertices to combined array
+				allVertices.push(...vertices);
+				
+				// Add indices with vertex offset
+				const offsetIndices = indices.map(i => i + Math.floor(vertexOffset / 3));
+				allIndices.push(...offsetIndices);
+				
+				// Create primitive for this mesh
+				primitives.push({
+					attributes: {
+						POSITION: 0 // Will be updated after we create accessors
+					},
+					indices: 1, // Will be updated
+					material: 0
+				});
+				
+				vertexOffset += vertices.length;
+			}
+		});
+		
+		if (allVertices.length === 0) {
+			throw new Error('No geometry data found to export');
+		}
+		
+		console.log(`Collected ${allVertices.length / 3} vertices and ${allIndices.length} indices`);
+		
+		// Create binary data
+		const vertexData = new Float32Array(allVertices);
+		const indexData = new Uint32Array(allIndices);
+		
+		// Calculate buffer sizes
+		const vertexByteLength = vertexData.byteLength;
+		const indexByteLength = indexData.byteLength;
+		const totalByteLength = vertexByteLength + indexByteLength;
+		
+		// Create combined buffer
+		const buffer = new ArrayBuffer(totalByteLength);
+		const vertexView = new Float32Array(buffer, 0, vertexData.length);
+		const indexView = new Uint32Array(buffer, vertexByteLength, indexData.length);
+		
+		vertexView.set(vertexData);
+		indexView.set(indexData);
+		
+		// Create glTF buffer views and accessors
+		gltf.buffers = [{
+			byteLength: totalByteLength
+		}];
+		
+		gltf.bufferViews = [
+			{
+				buffer: 0,
+				byteOffset: 0,
+				byteLength: vertexByteLength,
+				target: 34962 // ARRAY_BUFFER
+			},
+			{
+				buffer: 0,
+				byteOffset: vertexByteLength,
+				byteLength: indexByteLength,
+				target: 34963 // ELEMENT_ARRAY_BUFFER
+			}
+		];
+		
+		gltf.accessors = [
+			{
+				bufferView: 0,
+				componentType: 5126, // FLOAT
+				count: Math.floor(allVertices.length / 3),
+				type: 'VEC3',
+				min: [
+					Math.min(...allVertices.filter((_, i) => i % 3 === 0)),
+					Math.min(...allVertices.filter((_, i) => i % 3 === 1)),
+					Math.min(...allVertices.filter((_, i) => i % 3 === 2))
+				],
+				max: [
+					Math.max(...allVertices.filter((_, i) => i % 3 === 0)),
+					Math.max(...allVertices.filter((_, i) => i % 3 === 1)),
+					Math.max(...allVertices.filter((_, i) => i % 3 === 2))
+				]
+			},
+			{
+				bufferView: 1,
+				componentType: 5125, // UNSIGNED_INT
+				count: allIndices.length,
+				type: 'SCALAR'
+			}
+		];
+		
+		// Create default material
+		gltf.materials = [{
+			pbrMetallicRoughness: {
+				baseColorFactor: [0.8, 0.8, 0.8, 1.0],
+				metallicFactor: 0.0,
+				roughnessFactor: 0.5
+			}
+		}];
+		
+		// Create single mesh with all primitives combined
+		gltf.meshes = [{
+			primitives: [{
+				attributes: {
+					POSITION: 0
+				},
+				indices: 1,
+				material: 0
+			}]
+		}];
+		
+		// Convert to GLB format
+		const jsonString = JSON.stringify(gltf);
+		const jsonBuffer = new TextEncoder().encode(jsonString);
+		
+		// Pad JSON to 4-byte boundary
+		const jsonLength = jsonBuffer.length;
+		const jsonPadding = (4 - (jsonLength % 4)) % 4;
+		const paddedJsonLength = jsonLength + jsonPadding;
+		
+		// GLB header: magic (4) + version (4) + length (4) = 12 bytes
+		// JSON chunk header: length (4) + type (4) = 8 bytes
+		// BIN chunk header: length (4) + type (4) = 8 bytes
+		const headerSize = 12 + 8 + paddedJsonLength + 8;
+		const totalGlbLength = headerSize + totalByteLength;
+		
+		const glbBuffer = new ArrayBuffer(totalGlbLength);
+		const view = new DataView(glbBuffer);
+		let offset = 0;
+		
+		// GLB header
+		view.setUint32(offset, 0x46546C67, true); // 'glTF' magic
+		offset += 4;
+		view.setUint32(offset, 2, true); // version
+		offset += 4;
+		view.setUint32(offset, totalGlbLength, true); // total length
+		offset += 4;
+		
+		// JSON chunk
+		view.setUint32(offset, paddedJsonLength, true); // chunk length
+		offset += 4;
+		view.setUint32(offset, 0x4E4F534A, true); // 'JSON' type
+		offset += 4;
+		
+		// Copy JSON data
+		const jsonView = new Uint8Array(glbBuffer, offset, jsonLength);
+		jsonView.set(jsonBuffer);
+		offset += paddedJsonLength; // Include padding
+		
+		// BIN chunk
+		view.setUint32(offset, totalByteLength, true); // chunk length
+		offset += 4;
+		view.setUint32(offset, 0x004E4942, true); // 'BIN\0' type
+		offset += 4;
+		
+		// Copy binary data
+		const binView = new Uint8Array(glbBuffer, offset, totalByteLength);
+		binView.set(new Uint8Array(buffer));
+		
+		console.log(`Created GLB: JSON ${jsonLength} bytes, BIN ${totalByteLength} bytes, total ${totalGlbLength} bytes`);
+		
+		return glbBuffer;
 	}
 
 	dispose(): void {
