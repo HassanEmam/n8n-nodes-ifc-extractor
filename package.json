@@ -1,0 +1,60 @@
+{
+  "name": "n8n-nodes-ifc-extractor",
+  "version": "0.1.0",
+  "description": "Custom n8n node for extracting information from IFC files using web-ifc",
+  "keywords": [
+    "n8n-community-node-package",
+    "ifc",
+    "bim",
+    "construction",
+    "architecture"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/HassanEmam/n8n-nodes-ifc-extractor#readme",
+  "author": {
+    "name": "Hassan Emam",
+    "email": "hassan.emam@hotmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HassanEmam/n8n-nodes-ifc-extractor.git"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc && npm run copy:icons",
+    "copy:icons": "copyfiles -u 1 \"nodes/**/*.{png,svg}\" dist/",
+    "dev": "tsc --watch",
+    "format": "prettier nodes --write",
+    "lint": "eslint nodes",
+    "lintfix": "eslint nodes --fix",
+    "prepublishOnly": "npm run build && npm run lint -s",
+    "test": "node test-node.js",
+    "package": "npm run build && npm pack"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [],
+    "nodes": [
+      "dist/nodes/IfcExtractor/IfcExtractor.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^18.16.0",
+    "@typescript-eslint/parser": "~5.45",
+    "copyfiles": "^2.4.1",
+    "eslint": "~8.15",
+    "eslint-plugin-n8n-nodes-base": "~1.11",
+    "n8n-workflow": "^1.82.0",
+    "prettier": "^2.7.1",
+    "typescript": "~4.8.4"
+  },
+  "dependencies": {
+    "web-ifc": "^0.0.57"
+  },
+  "peerDependencies": {
+    "n8n-workflow": ">=0.174.0"
+  }
+}

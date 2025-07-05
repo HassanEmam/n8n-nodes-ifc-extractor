@@ -1,0 +1,98 @@
+{
+  "name": "IFC File Processing Example",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://example.com/sample.ifc",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "http-request-node",
+      "name": "Download IFC File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getFileInfo",
+        "inputDataSource": "binaryData",
+        "binaryPropertyName": "data"
+      },
+      "id": "ifc-extractor-info",
+      "name": "Get IFC File Info",
+      "type": "n8n-nodes-ifc-extractor.ifcExtractor",
+      "typeVersion": 1,
+      "position": [
+        460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "extractByType",
+        "ifcType": "IFCWALL",
+        "inputDataSource": "binaryData",
+        "binaryPropertyName": "data"
+      },
+      "id": "ifc-extractor-walls",
+      "name": "Extract Walls",
+      "type": "n8n-nodes-ifc-extractor.ifcExtractor",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "extractByType",
+        "ifcType": "IFCDOOR",
+        "inputDataSource": "binaryData",
+        "binaryPropertyName": "data"
+      },
+      "id": "ifc-extractor-doors",
+      "name": "Extract Doors",
+      "type": "n8n-nodes-ifc-extractor.ifcExtractor",
+      "typeVersion": 1,
+      "position": [
+        460,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Download IFC File": {
+      "main": [
+        [
+          {
+            "node": "Get IFC File Info",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Walls",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Doors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1"
+}
