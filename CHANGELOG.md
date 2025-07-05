@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.9] - 2025-07-05
+
+### Enhanced
+- **Geometry Extraction**: Implemented official web-ifc StreamAllMeshes approach for robust mesh extraction
+  - Added StreamAllMeshes with geometryExpressID-based geometry extraction (following official web-ifc examples)
+  - Implemented createMeshFromArrays method to properly handle vertex/index data conversion
+  - Enhanced multiple fallback strategies: direct entity search, StreamAllMeshes, and product entity search
+  - Improved WASM path detection for various deployment environments (Docker, n8n cloud, local)
+
+### Fixed
+- **TypeScript Compilation**: Fixed null check errors in mesh extraction pipeline
+  - Resolved geometryExpressID null checking in StreamAllMeshes callback
+  - Added proper type guards for safer geometry processing
+- **Build System**: Successfully built and packaged version 0.5.9
+  - All TypeScript compilation errors resolved
+  - Package ready for npm publication and n8n installation
+
 ## [0.5.8] - 2025-01-09
 
 ### Enhanced

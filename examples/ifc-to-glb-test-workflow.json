@@ -1,0 +1,82 @@
+{
+  "name": "IFC to GLB Conversion Test",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://example.com/sample.ifc",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "http-request-node",
+      "name": "Download IFC File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "inputDataSource": "binaryData",
+        "binaryPropertyName": "data",
+        "outputFileName": "converted_model.glb"
+      },
+      "id": "ifc-to-glb-converter",
+      "name": "Convert IFC to GLB",
+      "type": "n8n-nodes-ifc-extractor.ifcToGlb",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.fileName }}",
+        "dataPropertyName": "data"
+      },
+      "id": "write-glb-file",
+      "name": "Save GLB File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Download IFC File": {
+      "main": [
+        [
+          {
+            "node": "Convert IFC to GLB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert IFC to GLB": {
+      "main": [
+        [
+          {
+            "node": "Save GLB File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1"
+}
