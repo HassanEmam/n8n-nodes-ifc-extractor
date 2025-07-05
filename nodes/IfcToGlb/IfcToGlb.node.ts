@@ -198,12 +198,25 @@ export class IfcToGlb implements INodeType {
 				};
 
 				if (operation === 'convert') {
+					console.log('=== Starting IFC to GLB Node Execution ===');
+					console.log('Data source:', dataSource);
+					console.log('Input data size:', ifcData.byteLength, 'bytes');
+					console.log('Options:', JSON.stringify(options, null, 2));
+					
 					const result = await convertIfcToGlb(ifcData, options);
 					
 					// Convert ArrayBuffer to base64 string for n8n
 					const uint8Array = new Uint8Array(result.glbData);
 					const binaryString = Array.from(uint8Array, byte => String.fromCharCode(byte)).join('');
 					const base64Data = btoa(binaryString);
+					
+					console.log('=== IFC to GLB Node Execution Completed Successfully ===');
+					console.log('Final result stats:', {
+						meshCount: result.meshCount,
+						vertexCount: result.vertexCount,
+						fileSize: result.fileSize,
+						materialCount: result.materials.length
+					});
 					
 					returnData.push({
 						binary: {
@@ -225,14 +238,22 @@ export class IfcToGlb implements INodeType {
 					});
 				}
 			} catch (error) {
+				console.error('=== IFC to GLB Node Execution Failed ===');
+				console.error('Error occurred in node execution:', error);
+				console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
+				
 				if (this.continueOnFail()) {
+					console.log('Continuing on fail - adding error to output');
 					returnData.push({
 						json: {
 							success: false,
 							error: error instanceof Error ? error.message : 'Unknown error',
+							errorType: error instanceof Error ? error.constructor.name : 'UnknownError',
+							timestamp: new Date().toISOString(),
 						},
 					});
 				} else {
+					console.log('Not continuing on fail - throwing error');
 					throw error;
 				}
 			}
@@ -247,26 +268,48 @@ async function convertIfcToGlb(ifcData: ArrayBuffer, options: IIfcToGlbOptions):
 	const glbExporter = new GlbExporter();
 
 	try {
+		console.log('=== Starting IFC to GLB conversion ===');
+		console.log(`Input data size: ${ifcData.byteLength} bytes`);
+		console.log('Options:', JSON.stringify(options, null, 2));
+		
 		// Load IFC file
+		console.log('Loading IFC file...');
 		await meshExtractor.loadIfcFile(ifcData);
+		console.log('IFC file loaded successfully');
 
 		// Extract meshes and materials
+		console.log('Extracting meshes and materials...');
 		const [meshes, materials] = await Promise.all([
 			meshExtractor.extractMeshes(),
 			meshExtractor.extractMaterials(),
 		]);
+		console.log(`Extracted ${meshes.length} meshes and ${materials.length} materials`);
 
 		if (meshes.length === 0) {
-			throw new Error('No geometry found in IFC file');
+			console.warn('No geometry found in IFC file');
+			throw new Error('No geometry found in IFC file - the file may be empty or contain only non-geometric elements');
 		}
 
 		// Convert to GLB
+		console.log('Converting to GLB...');
 		const result = await glbExporter.convertToGlb(meshes, materials, options);
+		console.log(`GLB conversion completed. Output size: ${result.glbData.byteLength} bytes`);
 
 		return result;
+	} catch (error) {
+		console.error('=== IFC to GLB conversion failed ===');
+		console.error('Error details:', error);
+		
+		// Re-throw with enhanced error message
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error during conversion';
+		throw new Error(`IFC to GLB conversion failed: ${errorMessage}`);
 	} finally {
 		// Clean up
-		meshExtractor.dispose();
-		glbExporter.dispose();
+		try {
+			meshExtractor.dispose();
+			glbExporter.dispose();
+		} catch (cleanupError) {
+			console.warn('Error during cleanup:', cleanupError);
+		}
 	}
 }

@@ -203,19 +203,50 @@ export class IfcMeshExtractor {
 			
 			const uint8Array = new Uint8Array(ifcData);
 			console.log(`Loading IFC file with ${uint8Array.length} bytes...`);
-			this.modelId = this.api.OpenModel(uint8Array);
-			console.log(`IFC model loaded with ID: ${this.modelId}`);
+			
+			try {
+				this.modelId = this.api.OpenModel(uint8Array);
+				console.log(`IFC model loaded with ID: ${this.modelId}`);
+				
+				// Validate that the model was actually loaded
+				if (this.modelId === null || this.modelId === undefined || this.modelId < 0) {
+					throw new Error(`Invalid model ID returned: ${this.modelId}`);
+				}
+				
+				// Try to get basic model info to verify it's working
+				try {
+					const allLines = this.api.GetAllLines(this.modelId);
+					console.log(`Model validation: Found ${allLines.size()} lines in IFC model`);
+					
+					if (allLines.size() === 0) {
+						throw new Error('Model appears to be empty (no lines found)');
+					}
+				} catch (validationError) {
+					console.warn('Model validation failed:', validationError);
+					throw new Error(`Model loaded but validation failed: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`);
+				}
+				
+			} catch (modelError) {
+				const errorMsg = modelError instanceof Error ? modelError.message : 'Unknown error';
+				console.error('Failed to open/validate IFC model:', errorMsg);
+				this.modelId = null;
+				throw new Error(`Failed to open IFC model: ${errorMsg}`);
+			}
 		} catch (error) {
 			console.error('Failed to load IFC file:', error);
+			this.modelId = null;
 			throw new Error(`Failed to initialize web-ifc or load IFC file: ${error instanceof Error ? error.message : 'Unknown error'}`);
 		}
 	}
 
 	async extractMeshes(): Promise<IMeshData[]> {
-		if (!this.modelId) {
-			throw new Error('No IFC model loaded');
+		if (!this.modelId || this.modelId < 0) {
+			const errorMsg = `No valid IFC model loaded. Model ID: ${this.modelId}. Call loadIfcFile() first.`;
+			console.error(errorMsg);
+			throw new Error(errorMsg);
 		}
 
+		console.log(`Starting mesh extraction for model ID: ${this.modelId}`);
 		const meshes: IMeshData[] = [];
 		
 		// Get all geometric representation items
